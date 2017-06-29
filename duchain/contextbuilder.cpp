@@ -349,6 +349,35 @@ QPair<KUrl, QStringList> ContextBuilder::findModulePath(const QString& name, con
         searchPaths << curPathDir.path();
     }
     else {
+        // First, try to find such file within a project in a lib/ subpath. We also should consider
+        // that from X import Y is interpreted as X.Y by parser, but we should find X.py
+        using PathOption = QPair<QString, QStringList>;
+        QList<PathOption> options;
+        QStringList leftNameComponents;
+        
+        while (!nameComponents.empty()) {
+            options.append(PathOption("lib/" + nameComponents.join("/") + ".py", leftNameComponents));
+            
+            if (nameComponents.last() != "__init__") {
+                leftNameComponents.insert(0, nameComponents.last());
+            }
+            
+            nameComponents.removeLast();
+        }
+        
+        foreach  (IProject* project, ICore::self()->projectController()->projects() ) {
+            foreach ( const IndexedString& file, project->fileSet() ) {
+                foreach (const PathOption& option, options) {
+                    if (file.str().endsWith(option.first)) {
+                        qDebug() << file.str() << "~" << option.first << " " << option.second.join(".");
+                        return QPair<KUrl, QStringList>(KUrl(file.str()), option.second);
+                    }
+                }
+            }
+        }
+        
+        nameComponents = name.split(".");
+        
         // If this is not a relative import, use the project directory,
         // the current directory, and all system include paths.
         // FIXME: If absolute imports enabled, don't add curently parsed doc path
@@ -371,6 +400,7 @@ QPair<KUrl, QStringList> ContextBuilder::findModulePath(const QString& name, con
             }
             QString testFilename = tmp.path(KUrl::AddTrailingSlash) + component;
             KUrl sourceUrl = testFilename + ".py";
+            
             // we can only parse those, so we don't care about anything else for now.
             // Any C modules (.so, .dll) will be ignored, and highlighted as "not found". TODO fix this
             QFile sourcefile(testFilename + ".py");
@@ -394,6 +424,7 @@ QPair<KUrl, QStringList> ContextBuilder::findModulePath(const QString& name, con
             }
         }
     }
+    
     return QPair<KUrl, QStringList>(KUrl(), QStringList());
 }
 
